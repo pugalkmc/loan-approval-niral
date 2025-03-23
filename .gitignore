@@ -1,0 +1,13 @@
+__pycache__/
+venv/
+
+llm/venv/
+llm/__pycache__/
+
+poppler/__pycache__/
+poppler/venv/
+poppler/images/
+
+ocr/__pycache__/
+ocr/venv/
+ocr/images/
