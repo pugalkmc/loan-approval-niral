@@ -45,8 +45,8 @@ For better performance or if you choose to run the components on different devic
    ```
 3. Update the `.env` file in the root directory with the IP addresses of the respective servers:
    ```env
-   OCR_SERVER=http://<OCR_IP>:<PORT>
-   LLM_SERVER=http://<LLM_IP>:<PORT>
+   OCR_SERVER=<OCR_IP>
+   LLM_SERVER=<LLM_IP>
    ```
 4. Repeat the previous **Steps to Run** for each server on its designated device.
 
