@@ -1,0 +1,10 @@
+fastapi
+pdf2image
+torch
+torchvision
+uvicorn
+aiofiles
+python-multipart
+logger
+jwt
+opencv-python
