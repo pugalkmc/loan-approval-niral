@@ -86,4 +86,7 @@ def extract_text_from_image(file_path: str, batch_size: int = 4, use_gpu: bool =
             for line in o.text_lines:
                 final_text += line.text.strip() + "\n"
 
-    return final_text.strip()
+    result = {
+        "extracted_text": final_text.strip(),
+    }
+    return result

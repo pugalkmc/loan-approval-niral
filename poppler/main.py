@@ -1,28 +1,20 @@
 # Installed Libraries
-import logging
 import uvicorn
 import torch
-import jwt
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import FastAPI, File, UploadFile, Form
+from fastapi.security import HTTPBearer
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 # Internal Libraries
-from .process_pdf import process_pdf_file
-from .mongodb_config import users_collection, jobs_collection, applications_collection
-from .Models import RegisterModel, LoginModel, JobPostModel, Biodata
-from config.settings import CUDA_CONFIGURED, SECRET_KEY, IS_CUDA_CHECK_NEEDED
+from .process_pdf import process_pdf_file, logger
+from config.settings import CUDA_CONFIGURED, IS_CUDA_CHECK_NEEDED
 
 # Python Libraries
-import datetime
 
 if CUDA_CONFIGURED=='1':
     torch.cuda.empty_cache()
     torch.cuda.ipc_collect()
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 if IS_CUDA_CHECK_NEEDED == '1':
     if torch.cuda.is_available():
@@ -115,41 +107,15 @@ prompt_schema = {
     }
 }
 
-# Configure logger
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
 # Security scheme for HTTPBearer
 security = HTTPBearer()
-
-async def get_user_details(credentials, application_id):
-    user_id = verify_jwt_token(credentials)
-    # Fetch the application data for the given user_id and application_id
-    application = applications_collection.find_one(
-        {"user_id": user_id, "application_id": application_id},
-        {'biodata.profilePicture': 0}
-    )
     
-    biodata = application.get("biodata", {})
-    education = application.get("education", {'degree': [], 'gateDetails': {}})
-    return {"biodata": biodata, "education": education}
-    
-@app.post("/api/application/{application_id}/upload")
+@app.post("/validate")
 async def validate(
-    application_id: str,
-    file: UploadFile = File(...),
-    schema: str = Form(...),
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    file: UploadFile = File(...)
 ):
-    document_type = schema
-    userDetails = await get_user_details(credentials, application_id)
-    biodata = userDetails['biodata']
-    education = userDetails['education']
-    
-    if schema is None or schema not in prompt_schema:
-        return JSONResponse(content={"error": "Schema is required"}, status_code=400)
-    
-    schema = prompt_schema[schema]
+    document_type = "aadhaar"
+    schema = prompt_schema[document_type]
 
     result = await process_pdf_file(file, schema, document_type)
     try:
@@ -180,208 +146,6 @@ async def validate(
         return JSONResponse(content={"messages": messages, "entity": result}, status_code=200)
 
 
-# Helper function to create a JWT token
-def create_jwt_token(user_id: str) -> str:
-    expiration = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)
-    payload = {
-        "user_id": user_id,
-        "exp": expiration,
-        "iat": datetime.datetime.now(datetime.timezone.utc)
-    }
-    token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
-    return token
-
-# Helper function to verify JWT token
-def verify_jwt_token(credentials: HTTPAuthorizationCredentials):
-    try:
-        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=["HS256"])
-        return payload["user_id"]
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token has expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-# API: /api/register
-@app.post("/api/register")
-async def register(user: RegisterModel):
-    existing_user = users_collection.find_one({"username": user.username})
-    if existing_user:
-        raise HTTPException(status_code=400, detail="User already exists")
-    
-    # Save user in the MongoDB collection
-    users_collection.insert_one({"username": user.username, "password": user.password})
-    return {"message": "Registration successful"}
-
-# API: /api/login
-@app.post("/api/login")
-async def login(user: LoginModel):
-    # Fetch user from MongoDB
-    db_user = users_collection.find_one({"username": user.username})
-    if not db_user or db_user["password"] != user.password:
-        raise HTTPException(status_code=404, detail="Invalid credentials")
-    
-    # Generate JWT token
-    token = create_jwt_token(user.username)
-    return {"message": "Login successful", "token": token}
-
-# API: /api/user (Protected route)
-@app.get("/api/user")
-async def get_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    user_id = verify_jwt_token(credentials)
-    # Fetch user details from MongoDB
-    user = users_collection.find_one({"username": user_id}, {"_id": 0, "password": 0})
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    return {"user": user}
-
-# API: /api/job/create (Protected route)
-@app.post("/api/job/create")
-async def create_job_post(job: JobPostModel, credentials: HTTPAuthorizationCredentials = Depends(security)):
-    user_id = verify_jwt_token(credentials)
-    job_post = {
-        "title": job.title,
-        "createdAt": datetime.datetime.now(datetime.timezone.utc),
-        "updatedAt": datetime.datetime.now(datetime.timezone.utc),
-        "createdBy": user_id
-    }
-    
-    # Save job post in the MongoDB collection
-    result = jobs_collection.insert_one(job_post)
-    
-    # Convert the _id (ObjectId) to a string for JSON serialization
-    job_post["_id"] = str(result.inserted_id)
-    
-    return {"message": "Job post created successfully", "job": job_post}
-
-# API: /api/job (Protected route)
-@app.get("/api/job")
-async def get_job_posts(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    verify_jwt_token(credentials)
-    # Fetch job posts from MongoDB
-    job_posts = list(jobs_collection.find())
-    for job in job_posts:
-        job["_id"] = str(job["_id"])
-    return {"jobs": job_posts}
-
-# API: /api/biodata (Protected route)
-@app.post("/api/biodata")
-async def submit_biodata(biodata: Biodata, credentials: HTTPAuthorizationCredentials = Depends(security)):
-    user_id = verify_jwt_token(credentials)
-    
-    # Check if biodata already exists for the user
-    existing_biodata = users_collection.find_one({"username": user_id, "biodata": {"$exists": True}})
-    if existing_biodata:
-        raise HTTPException(status_code=400, detail="Biodata already exists")
-
-    # Save the biodata to the user's record
-    users_collection.update_one(
-        {"username": user_id},
-        {"$set": {"biodata": biodata}}
-    )
-
-    return {"message": "Biodata submitted successfully"}
-
-# API: /api/application/{application_id}/biodata (Protected route)
-@app.get("/api/application/{application_id}/biodata")
-async def get_biodata(application_id: str, credentials: HTTPAuthorizationCredentials = Depends(security)):
-    user_id = verify_jwt_token(credentials)
-    
-    # Fetch application details from the applications collection for the user and application_id
-    application = applications_collection.find_one({"user_id": user_id, "application_id": application_id})
-    if not application:
-        # If application not found, create a new application
-        new_application = {
-            "user_id": user_id,
-            "application_id": application_id,
-            "createdAt": datetime.datetime.now(datetime.timezone.utc),
-            "updatedAt": datetime.datetime.now(datetime.timezone.utc)
-        }
-        result = applications_collection.insert_one(new_application)
-        new_application["_id"] = str(result.inserted_id)
-        application = new_application
-    else:
-        application["_id"] = str(application["_id"])
-    
-    return application.get('biodata', {})
-
-# API: /api/application/{application_id}/biodata (Protected route)
-@app.post("/api/application/{application_id}/biodata")
-async def save_application_biodata(application_id: str, biodata: dict, credentials: HTTPAuthorizationCredentials = Depends(security)):
-    user_id = verify_jwt_token(credentials)
-
-    # Update the application with the new biodata
-    applications_collection.update_one(
-        {"user_id": user_id, "application_id": application_id},
-        {"$set": {"biodata": biodata, "updatedAt": datetime.datetime.now(datetime.timezone.utc)}},
-        upsert=True
-    )
-    
-    return {"message": "Application biodata saved successfully"}
-
-
-@app.get("/api/application/{application_id}/education")
-async def get_education_data(application_id: str, credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """
-    Endpoint to retrieve education data for a specific application.
-    The route is protected and requires JWT token for authentication.
-    """
-    user_id = verify_jwt_token(credentials)
-
-    # Fetch the application data for the given user_id and application_id
-    application = applications_collection.find_one(
-        {"user_id": user_id, "application_id": application_id}
-    )
-
-    if not application:
-        raise HTTPException(status_code=404, detail="Application not found")
-    
-    # if 'education' in application:
-    #     print(application.get("education"))
-    # Return the education data
-    return {"education": application.get("education", {'degree': [], 'gateDetails': {}})}
-
-
-@app.post("/api/application/{application_id}/education")
-async def save_education_data(application_id: str, education: dict, credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """
-    Endpoint to save education data for a specific application.
-    The route is protected and requires JWT token for authentication.
-    """
-    user_id = verify_jwt_token(credentials)
-
-    # Update the application with the new education data
-    result = applications_collection.update_one(
-        {"user_id": user_id, "application_id": application_id},
-        {"$set": {"education": education, "updatedAt": datetime.datetime.now(datetime.timezone.utc)}},
-        upsert=True
-    )
-    
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Application not found")
-
-    return {"message": "Application education data saved successfully"}
-
-
-@app.get("/api/application/{application_id}/details")
-async def get_application_details(application_id: str, credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """
-    Endpoint to retrieve both biodata and education details for a specific application.
-    The route is protected and requires JWT token for authentication.
-    """
-    user_id = verify_jwt_token(credentials)
-    # Fetch the application data for the given user_id and application_id
-    application = applications_collection.find_one(
-        {"user_id": user_id, "application_id": application_id}
-    )
-    if not application:
-        raise HTTPException(status_code=404, detail="Application not found")
-    
-    # Retrieve biodata and education details
-    biodata = application.get("biodata", {})
-    education = application.get("education", {'degree': [], 'gateDetails': {}})
-    return {"biodata": biodata, "education": education}
-
 # Main entry point for running the app
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=3001)
+    uvicorn.run(app, host="0.0.0.0", port=8000)

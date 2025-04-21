@@ -4,7 +4,6 @@ import httpx
 import logging
 import shutil
 from fastapi import File, UploadFile, HTTPException
-from PIL import Image
 from pdf2image import convert_from_path
 from torchvision import transforms
 import cv2
@@ -15,9 +14,11 @@ from config import OCR_SERVER_IP, LLM_SERVER_IP
 # Python Libraries
 import time
 import os
-import numpy as np
 from datetime import datetime
 import concurrent.futures
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 # Function to remove watermark from an image using thresholding
@@ -37,9 +38,6 @@ def remove_watermark(image_path):
     cv2.imwrite(output_path, thresh)
     return output_path
 
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 poppler_path = r"C:\Program Files\Release-24.08.0-0\poppler-24.08.0\Library\bin"
 IMAGES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "images")
@@ -148,7 +146,7 @@ async def process_pdf_file(file: UploadFile = File(...), schema: str = None, doc
             async with httpx.AsyncClient(timeout=30.0) as client:
                 try:
                     response = await client.post(
-                        f"http://{llm_server}:8002/process-data",
+                        f"http://{LLM_SERVER_IP}:8002/process-data",
                         json={"raw_text": text['extracted_text'], "schema": schema}
                     )
                     response.raise_for_status()

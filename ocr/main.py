@@ -6,7 +6,7 @@ import aiofiles
 from PIL import Image
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, File, UploadFile
-from .extract import extract_text_from_image, load_model_once
+from .extract import extract_text_from_image, load_model_once, logger
 
 # Internal Libraries
 from config.settings import IS_CUDA_CHECK_NEEDED, CUDA_CONFIGURED
@@ -35,7 +35,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Get the base directory from an environment variable, with a default value
-BASE_DIR = Path(os.getenv("OCR_BASE_DIR", "/home/sumith/Downloads/server/ocr"))
+BASE_DIR = Path(__file__).resolve().parent
 
 @app.post("/extract-text")
 async def process_data(file: UploadFile = File(...)) -> dict:
@@ -58,10 +58,14 @@ async def process_data(file: UploadFile = File(...)) -> dict:
         # Generate a unique file name using timestamp
         timestamp = int(time.time())
         file_path = image_dir / f"{timestamp}_{file.filename}"
+
+        print("Processing image on OCR")
         
         async with aiofiles.open(file_path, "wb") as buffer:
             await buffer.write(await file.read())
             buffer.write(await file.read())
+
+        print("Written by buffer")
         
         # Call the extract_text_from_image function with the saved file path
         result = extract_text_from_image(str(file_path))

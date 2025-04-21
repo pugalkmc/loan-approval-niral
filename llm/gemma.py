@@ -11,7 +11,11 @@ llm = None
 
 def load_llm_once():
     global llm
-    llm = OllamaLLM(model="gemma3:12b", temperature=0)
+    try:
+        llm = OllamaLLM(model="gemma3:12b", temperature=0)
+    except Exception as e:
+        logger.error(f"Failed to load the model: {e}")
+        raise
 
 # Define the prompt template for JSON validation
 template = """
