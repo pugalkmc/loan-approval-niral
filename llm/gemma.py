@@ -7,7 +7,11 @@ from langchain_ollama import OllamaLLM
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-llm = OllamaLLM(model="gemma3:12b", temperature=0)
+llm = None
+
+def load_llm_once():
+    global llm
+    llm = OllamaLLM(model="gemma3:12b", temperature=0)
 
 # Define the prompt template for JSON validation
 template = """

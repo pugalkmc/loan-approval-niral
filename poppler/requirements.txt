@@ -8,3 +8,5 @@ python-multipart
 logger
 jwt
 opencv-python
+pymongo
+pydantic[email]

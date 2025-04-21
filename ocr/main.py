@@ -6,17 +6,20 @@ import aiofiles
 from PIL import Image
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, File, UploadFile
-from surya_ocr import extract_text_from_image, load_models_once
+from .extract import extract_text_from_image, load_model_once
 
 # Internal Libraries
-from config.config import IS_CUDA_CHECK_NEEDED
+from config.settings import IS_CUDA_CHECK_NEEDED, CUDA_CONFIGURED
+
+load_model_once()
 
 # Python Libraries
 import os
 import time
 
-logger = logging.getLogger("ocr_logger")
-logger.setLevel(logging.INFO)
+if CUDA_CONFIGURED=='1':
+    torch.cuda.empty_cache()
+    torch.cuda.ipc_collect()
 
 if IS_CUDA_CHECK_NEEDED == '1':
     if torch.cuda.is_available():
@@ -26,8 +29,6 @@ if IS_CUDA_CHECK_NEEDED == '1':
         exit()
 
 app = FastAPI()
-
-load_models_once()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

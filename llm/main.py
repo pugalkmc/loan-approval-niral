@@ -6,15 +6,14 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 
 # Internal Libraries
-from .gemma import extract_entity
-from config.settings import IS_CUDA_CHECK_NEEDED
+from .gemma import extract_entity, load_llm_once, logger
+from config.settings import IS_CUDA_CHECK_NEEDED, CUDA_CONFIGURED
 
 # Python Libraries
 
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+if CUDA_CONFIGURED=='1':
+    torch.cuda.empty_cache()
+    torch.cuda.ipc_collect()
 
 if IS_CUDA_CHECK_NEEDED=='1':
     if torch.cuda.is_available():
@@ -22,6 +21,8 @@ if IS_CUDA_CHECK_NEEDED=='1':
     else:
         logger.error("GPU not accessible, stopping program")
         exit()
+
+load_llm_once()
 
 app = FastAPI()
 

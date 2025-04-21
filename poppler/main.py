@@ -21,8 +21,8 @@ if CUDA_CONFIGURED=='1':
     torch.cuda.empty_cache()
     torch.cuda.ipc_collect()
 
-logger = logging.getLogger("ocr_logger")
-logger.setLevel(logging.INFO)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 if IS_CUDA_CHECK_NEEDED == '1':
     if torch.cuda.is_available():
